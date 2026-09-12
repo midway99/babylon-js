@@ -14,11 +14,13 @@ import {
 import HavokPhysics from "@babylonjs/havok";
 import havokWasmUrl from "@babylonjs/havok/lib/esm/HavokPhysics.wasm?url";
 
+import { ArenaCourse } from "./arenaCourse";
+import { DustParticlePool } from "./snake/dustParticlePool";
 import { MaterialPalette } from "./snake/materialPalette";
 import { SegmentDebrisPool } from "./snake/segmentDebrisPool";
 import { SegmentDragController } from "./snake/segmentDragController";
 import { SnakeFactory } from "./snake/snakeFactory";
-import { CollisionLayer, type GroundMetadata } from "./snake/types";
+import { CollisionMasks, type GroundMetadata } from "./snake/types";
 
 export class PhysicsSnakeApp {
   private readonly engine: Engine;
@@ -50,16 +52,19 @@ export class PhysicsSnakeApp {
     this.createCamera(scene);
     this.createLight(scene);
     this.createGround(scene);
-    new SnakeFactory(scene, new MaterialPalette(scene), new SegmentDragController(), new SegmentDebrisPool(scene)).create();
+    const dustPool = new DustParticlePool(scene);
+    const debrisPool = new SegmentDebrisPool(scene, dustPool);
+    const segments = new SnakeFactory(scene, new MaterialPalette(scene), new SegmentDragController(), debrisPool).create();
+    new ArenaCourse(scene, segments, debrisPool).create();
 
     return scene;
   }
 
   private createCamera(scene: Scene): void {
-    const camera = new ArcRotateCamera("camera", -Math.PI * 0.42, Math.PI * 0.32, 7.5, new Vector3(-1.8, 0.8, 0), scene);
+    const camera = new ArcRotateCamera("camera", -Math.PI * 0.38, Math.PI * 0.31, 14, new Vector3(0, 0.55, 0), scene);
     camera.attachControl(this.canvas, true);
-    camera.lowerRadiusLimit = 4;
-    camera.upperRadiusLimit = 12;
+    camera.lowerRadiusLimit = 8;
+    camera.upperRadiusLimit = 19;
   }
 
   private createLight(scene: Scene): void {
@@ -68,7 +73,7 @@ export class PhysicsSnakeApp {
   }
 
   private createGround(scene: Scene): void {
-    const ground = MeshBuilder.CreateGround("ground", { width: 8, height: 5 }, scene);
+    const ground = MeshBuilder.CreateGround("ground", { width: 15, height: 10 }, scene);
     const material = new StandardMaterial("ground-material", scene);
     material.diffuseColor = new Color3(0.34, 0.36, 0.38);
     material.specularColor = Color3.Black();
@@ -76,8 +81,8 @@ export class PhysicsSnakeApp {
     ground.metadata = { kind: "ground" } satisfies GroundMetadata;
 
     const aggregate = new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0, friction: 0.85, restitution: 0.05 }, scene);
-    aggregate.shape.filterMembershipMask = CollisionLayer.Ground;
-    aggregate.shape.filterCollideMask = CollisionLayer.Snake;
+    aggregate.shape.filterMembershipMask = CollisionMasks.GroundMembership;
+    aggregate.shape.filterCollideMask = CollisionMasks.GroundCollidesWith;
   }
 
   private readonly handleResize = (): void => {

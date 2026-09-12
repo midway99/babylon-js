@@ -14,7 +14,8 @@ import {
 } from "@babylonjs/core";
 import type { IPhysicsCollisionEvent } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
 
-import { CollisionLayer, SnakeDimensions, type SnakeSegment } from "./types";
+import type { DustParticlePool } from "./dustParticlePool";
+import { CollisionMasks, SnakeDimensions, type SnakeSegment } from "./types";
 
 interface DebrisPiece {
   readonly mesh: Mesh;
@@ -30,10 +31,14 @@ export class SegmentDebrisPool {
 
   private readonly piecesBySegment = new Map<string, DebrisPiece[]>();
   private readonly brokenSegmentIds = new Set<string>();
+  private readonly lastDustTimeBySegment = new Map<string, number>();
   private readonly disposedConstraints = new WeakSet<BallAndSocketConstraint>();
   private readonly tmpVelocity = Vector3.Zero();
 
-  public constructor(private readonly scene: Scene) {}
+  public constructor(
+    private readonly scene: Scene,
+    private readonly dustPool: DustParticlePool,
+  ) {}
 
   public prepare(segment: SnakeSegment): void {
     const pieces = this.createPieces(segment);
@@ -43,6 +48,15 @@ export class SegmentDebrisPool {
     segment.aggregate.body.getCollisionObservable().add((event) => {
       this.handleCollision(segment, event);
     });
+  }
+
+  public breakByObstacle(segment: SnakeSegment, impactPoint = segment.mesh.getAbsolutePosition()): void {
+    if (this.brokenSegmentIds.has(segment.mesh.metadata.id)) {
+      return;
+    }
+
+    segment.aggregate.body.getLinearVelocityToRef(this.tmpVelocity);
+    this.breakSegment(segment, impactPoint, Math.max(SegmentDebrisPool.ImpactThreshold, 7.5));
   }
 
   private createPieces(segment: SnakeSegment): DebrisPiece[] {
@@ -109,30 +123,54 @@ export class SegmentDebrisPool {
     aggregate.body.setGravityFactor(0);
     aggregate.body.setLinearDamping(0.08);
     aggregate.body.setAngularDamping(0.12);
-    aggregate.shape.filterMembershipMask = 0;
-    aggregate.shape.filterCollideMask = 0;
+    aggregate.shape.filterMembershipMask = CollisionMasks.Disabled;
+    aggregate.shape.filterCollideMask = CollisionMasks.Disabled;
 
     return { mesh, aggregate, localOffset };
   }
 
   private handleCollision(segment: SnakeSegment, event: IPhysicsCollisionEvent): void {
+    if (this.isSurfaceCollision(event)) {
+      this.emitMovementDust(segment, event);
+    }
+
     if (
       event.type !== PhysicsEventType.COLLISION_STARTED ||
       event.impulse < SegmentDebrisPool.ImpactThreshold ||
       this.brokenSegmentIds.has(segment.mesh.metadata.id) ||
-      !this.isGroundCollision(event)
+      !this.isSurfaceCollision(event)
     ) {
       return;
     }
 
-    this.breakSegment(segment, event);
+    segment.aggregate.body.getLinearVelocityToRef(this.tmpVelocity);
+    this.breakSegment(segment, event.point ?? segment.mesh.getAbsolutePosition(), event.impulse);
   }
 
-  private isGroundCollision(event: IPhysicsCollisionEvent): boolean {
+  private isSurfaceCollision(event: IPhysicsCollisionEvent): boolean {
     return event.collidedAgainst.transformNode.metadata?.kind === "ground";
   }
 
-  private breakSegment(segment: SnakeSegment, event: IPhysicsCollisionEvent): void {
+  private emitMovementDust(segment: SnakeSegment, event: IPhysicsCollisionEvent): void {
+    if (
+      this.brokenSegmentIds.has(segment.mesh.metadata.id) ||
+      (event.type !== PhysicsEventType.COLLISION_STARTED && event.type !== PhysicsEventType.COLLISION_CONTINUED)
+    ) {
+      return;
+    }
+
+    const now = performance.now();
+    const lastDustTime = this.lastDustTimeBySegment.get(segment.mesh.metadata.id) ?? 0;
+
+    if (now - lastDustTime < 130) {
+      return;
+    }
+
+    this.lastDustTimeBySegment.set(segment.mesh.metadata.id, now);
+    this.dustPool.playAt(event.point ?? segment.mesh.getAbsolutePosition(), Math.max(0.7, event.impulse * 0.16));
+  }
+
+  private breakSegment(segment: SnakeSegment, impactPoint: Vector3, impactImpulse: number): void {
     const pieces = this.piecesBySegment.get(segment.mesh.metadata.id);
 
     if (!pieces) {
@@ -140,26 +178,25 @@ export class SegmentDebrisPool {
     }
 
     this.brokenSegmentIds.add(segment.mesh.metadata.id);
+    this.dustPool.playAt(impactPoint, Math.max(2.2, impactImpulse * 0.18));
     this.detachSegment(segment);
-    segment.aggregate.body.getLinearVelocityToRef(this.tmpVelocity);
     segment.aggregate.body.setLinearVelocity(Vector3.ZeroReadOnly);
     segment.aggregate.body.setAngularVelocity(Vector3.ZeroReadOnly);
     segment.aggregate.body.setCollisionCallbackEnabled(false);
     segment.aggregate.body.setGravityFactor(0);
     segment.aggregate.body.setMotionType(PhysicsMotionType.ANIMATED);
-    segment.aggregate.shape.filterMembershipMask = 0;
-    segment.aggregate.shape.filterCollideMask = 0;
+    segment.aggregate.shape.filterMembershipMask = CollisionMasks.Disabled;
+    segment.aggregate.shape.filterCollideMask = CollisionMasks.Disabled;
     segment.mesh.isVisible = false;
 
     const segmentRotation = segment.mesh.absoluteRotationQuaternion.clone();
-    const impactPoint = event.point ?? segment.mesh.getAbsolutePosition();
 
     for (const piece of pieces) {
-      this.activatePiece(piece, segment, segmentRotation, impactPoint, event);
+      this.activatePiece(piece, segment, segmentRotation, impactPoint, impactImpulse);
     }
   }
 
-  private activatePiece(piece: DebrisPiece, segment: SnakeSegment, segmentRotation: Quaternion, impactPoint: Vector3, event: IPhysicsCollisionEvent): void {
+  private activatePiece(piece: DebrisPiece, segment: SnakeSegment, segmentRotation: Quaternion, impactPoint: Vector3, impactImpulse: number): void {
     const worldOffset = Vector3.TransformCoordinates(piece.localOffset, segment.mesh.getWorldMatrix()).subtract(segment.mesh.getAbsolutePosition());
     const position = segment.mesh.getAbsolutePosition().add(worldOffset);
     const scatterDirection = position.subtract(impactPoint);
@@ -177,10 +214,10 @@ export class SegmentDebrisPool {
     piece.aggregate.body.setMotionType(PhysicsMotionType.DYNAMIC);
     piece.aggregate.body.setLinearVelocity(this.tmpVelocity.scale(0.35));
     piece.aggregate.body.setAngularVelocity(Vector3.ZeroReadOnly);
-    piece.aggregate.shape.filterMembershipMask = CollisionLayer.Snake;
-    piece.aggregate.shape.filterCollideMask = CollisionLayer.Ground;
+    piece.aggregate.shape.filterMembershipMask = CollisionMasks.SnakeMembership;
+    piece.aggregate.shape.filterCollideMask = CollisionMasks.SnakeCollidesWith;
 
-    const impulseScale = Math.min(event.impulse, 12);
+    const impulseScale = Math.min(impactImpulse, 12);
     const impulse = scatterDirection.scale(impulseScale * 0.18).add(new Vector3(0, impulseScale * 0.07, 0));
     piece.aggregate.body.applyImpulse(impulse, piece.mesh.getAbsolutePosition());
     piece.aggregate.body.applyAngularImpulse(

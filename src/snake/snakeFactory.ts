@@ -3,7 +3,7 @@ import { BallAndSocketConstraint, MeshBuilder, PhysicsAggregate, PhysicsShapeTyp
 import type { MaterialPalette } from "./materialPalette";
 import type { SegmentDebrisPool } from "./segmentDebrisPool";
 import type { SegmentDragController } from "./segmentDragController";
-import { CollisionLayer, SnakeDimensions, type SegmentMetadata, type SnakeSegment } from "./types";
+import { CollisionMasks, SnakeDimensions, type SegmentMetadata, type SnakeSegment } from "./types";
 
 export class SnakeFactory {
   private static readonly SegmentCount = 4;
@@ -43,7 +43,7 @@ export class SnakeFactory {
       },
       this.scene,
     );
-    mesh.position.set(-index * SnakeDimensions.Size.x, SnakeDimensions.StartHeight, 0);
+    mesh.position.set(SnakeDimensions.StartPosition.x - index * SnakeDimensions.Size.x, SnakeDimensions.StartPosition.y, SnakeDimensions.StartPosition.z);
     mesh.material = this.palette.get(index);
     mesh.metadata = { id, kind: "snake-segment" } satisfies SegmentMetadata;
 
@@ -60,8 +60,8 @@ export class SnakeFactory {
 
     aggregate.body.setLinearDamping(0.35);
     aggregate.body.setAngularDamping(0.55);
-    aggregate.shape.filterMembershipMask = CollisionLayer.Snake;
-    aggregate.shape.filterCollideMask = CollisionLayer.Ground;
+    aggregate.shape.filterMembershipMask = CollisionMasks.SnakeMembership;
+    aggregate.shape.filterCollideMask = CollisionMasks.SnakeCollidesWith;
 
     const segment = { mesh, aggregate, index, constraints: [] };
     this.dragController.attach(segment);

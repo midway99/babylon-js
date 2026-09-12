@@ -10,6 +10,14 @@ export interface GroundMetadata {
   kind: "ground";
 }
 
+export interface FinishMetadata {
+  kind: "finish";
+}
+
+export interface MazeWallMetadata {
+  kind: "maze-wall";
+}
+
 export interface SnakeSegment {
   readonly mesh: Mesh;
   readonly aggregate: PhysicsAggregate;
@@ -22,7 +30,15 @@ export const enum CollisionLayer {
   Ground = 1 << 1,
 }
 
+export class CollisionMasks {
+  public static readonly Disabled = 0;
+  public static readonly SnakeMembership = CollisionLayer.Snake;
+  public static readonly SnakeCollidesWith = CollisionLayer.Ground;
+  public static readonly GroundMembership = CollisionLayer.Ground;
+  public static readonly GroundCollidesWith = CollisionLayer.Snake;
+}
+
 export class SnakeDimensions {
-  public static readonly Size = new Vector3(1.2, 0.42, 0.42);
-  public static readonly StartHeight = 2.4;
+  public static readonly Size = new Vector3(0.78, 0.28, 0.28);
+  public static readonly StartPosition = new Vector3(-2.3, 2.4, -4.03);
 }
