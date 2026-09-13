@@ -7,14 +7,17 @@ export interface SegmentMetadata {
 }
 
 export interface GroundMetadata {
+  id: string;
   kind: "ground";
 }
 
 export interface FinishMetadata {
+  id: string;
   kind: "finish";
 }
 
 export interface MazeWallMetadata {
+  id: string;
   kind: "maze-wall";
 }
 

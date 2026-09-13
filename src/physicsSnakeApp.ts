@@ -21,6 +21,7 @@ import { SegmentDebrisPool } from "./snake/segmentDebrisPool";
 import { SegmentDragController } from "./snake/segmentDragController";
 import { SnakeFactory } from "./snake/snakeFactory";
 import { CollisionMasks, type GroundMetadata } from "./snake/types";
+import { SceneGui } from "./sceneGui";
 
 export class PhysicsSnakeApp {
   private readonly engine: Engine;
@@ -55,7 +56,10 @@ export class PhysicsSnakeApp {
     const dustPool = new DustParticlePool(scene);
     const debrisPool = new SegmentDebrisPool(scene, dustPool);
     const segments = new SnakeFactory(scene, new MaterialPalette(scene), new SegmentDragController(), debrisPool).create();
-    new ArenaCourse(scene, segments, debrisPool).create();
+    const gui = new SceneGui(scene);
+    new ArenaCourse(scene, segments, debrisPool, () => {
+      gui.showFinishMessage();
+    }).create();
 
     return scene;
   }
@@ -78,7 +82,7 @@ export class PhysicsSnakeApp {
     material.diffuseColor = new Color3(0.34, 0.36, 0.38);
     material.specularColor = Color3.Black();
     ground.material = material;
-    ground.metadata = { kind: "ground" } satisfies GroundMetadata;
+    ground.metadata = { id: "ground", kind: "ground" } satisfies GroundMetadata;
 
     const aggregate = new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0, friction: 0.85, restitution: 0.05 }, scene);
     aggregate.shape.filterMembershipMask = CollisionMasks.GroundMembership;

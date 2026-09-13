@@ -130,15 +130,18 @@ export class SegmentDebrisPool {
   }
 
   private handleCollision(segment: SnakeSegment, event: IPhysicsCollisionEvent): void {
-    if (this.isSurfaceCollision(event)) {
+    const isGroundCollision = this.isGroundCollision(event);
+    const isWallCollision = this.isWallCollision(event);
+
+    if (isGroundCollision) {
       this.emitMovementDust(segment, event);
     }
 
     if (
       event.type !== PhysicsEventType.COLLISION_STARTED ||
-      event.impulse < SegmentDebrisPool.ImpactThreshold ||
       this.brokenSegmentIds.has(segment.mesh.metadata.id) ||
-      !this.isSurfaceCollision(event)
+      (!isGroundCollision && !isWallCollision) ||
+      event.impulse < SegmentDebrisPool.ImpactThreshold
     ) {
       return;
     }
@@ -147,8 +150,16 @@ export class SegmentDebrisPool {
     this.breakSegment(segment, event.point ?? segment.mesh.getAbsolutePosition(), event.impulse);
   }
 
-  private isSurfaceCollision(event: IPhysicsCollisionEvent): boolean {
-    return event.collidedAgainst.transformNode.metadata?.kind === "ground";
+  private isGroundCollision(event: IPhysicsCollisionEvent): boolean {
+    return this.hasCollisionKind(event, "ground");
+  }
+
+  private isWallCollision(event: IPhysicsCollisionEvent): boolean {
+    return this.hasCollisionKind(event, "maze-wall");
+  }
+
+  private hasCollisionKind(event: IPhysicsCollisionEvent, kind: string): boolean {
+    return event.collider.transformNode.metadata?.kind === kind || event.collidedAgainst.transformNode.metadata?.kind === kind;
   }
 
   private emitMovementDust(segment: SnakeSegment, event: IPhysicsCollisionEvent): void {

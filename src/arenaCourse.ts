@@ -40,6 +40,7 @@ export class ArenaCourse {
     private readonly scene: Scene,
     private readonly segments: readonly SnakeSegment[],
     private readonly debrisPool: SegmentDebrisPool,
+    private readonly onFinishReached: () => void,
   ) {}
 
   public create(): void {
@@ -85,7 +86,7 @@ export class ArenaCourse {
     const wall = MeshBuilder.CreateBox(spec.name, spec.size, this.scene);
     wall.position.copyFrom(spec.position);
     wall.material = material;
-    wall.metadata = { kind: "maze-wall" } satisfies MazeWallMetadata;
+    wall.metadata = { id: spec.name, kind: "maze-wall" } satisfies MazeWallMetadata;
 
     const aggregate = new PhysicsAggregate(
       wall,
@@ -146,7 +147,7 @@ export class ArenaCourse {
   private createFinishZone(): void {
     const finish = MeshBuilder.CreateBox("finish-zone", { width: 1.4, height: 0.8, depth: 1.45 }, this.scene);
     finish.position.set(6.05, 0.4, 3.25);
-    finish.metadata = { kind: "finish" } satisfies FinishMetadata;
+    finish.metadata = { id: "finish-zone", kind: "finish" } satisfies FinishMetadata;
 
     const material = new StandardMaterial("finish-zone-material", this.scene);
     material.diffuseColor = new Color3(0.1, 0.95, 0.25);
@@ -177,7 +178,7 @@ export class ArenaCourse {
     }
 
     this.finishReached = true;
-    window.alert("Поздравляем! Змейка добралась до финиша!");
+    this.onFinishReached();
   }
 
   private isFinishEvent(event: IBasePhysicsCollisionEvent, finishAggregate: PhysicsAggregate): boolean {
